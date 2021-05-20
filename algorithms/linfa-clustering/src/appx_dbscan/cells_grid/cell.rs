@@ -21,7 +21,7 @@ pub struct StatusPoint {
 impl StatusPoint {
     pub fn new(point_index: usize) -> StatusPoint {
         StatusPoint {
-            point_index: point_index,
+            point_index,
             is_core: false,
         }
     }
@@ -109,8 +109,8 @@ impl<F: Float> Cell<F> {
         &mut self.points
     }
 
-    pub fn populate_neighbours(&mut self, cells: &CellTable) {
-        self.get_neighbours_rec(&self.index.clone(), 0, cells);
+    pub fn populate_neighbours(&mut self, neighbors: Vec<usize>) {
+        self.neighbour_cell_indexes = neighbors;
     }
 
     pub fn approximate_range_counting(
@@ -154,59 +154,6 @@ impl<F: Float> Cell<F> {
 
     pub fn neighbours_indexes(&self) -> &Vec<usize> {
         &self.neighbour_cell_indexes
-    }
-
-    /// Recursively finds neighbours of a cell. The neighbours are all cells that may potentionally
-    /// contain points at a distance up to `tolerance`. Given the specific side size of the cells
-    /// and the particular choice of indexing of the cells, it is possible to find neighbouring
-    /// cells based solely on their indices. The `tolerance` maximum distance for points translates
-    /// to `sqrt(4 * dimensionality)` for indexes.  The neighbours are found by computing all
-    /// possible nieghbouring indexes and chacking if they are in the table. The indexes are computed
-    /// by translating each feature of the index of this cell up to the maximum distance for cells in both
-    /// directions.
-    ///
-    /// ## Parameters
-    ///
-    /// * `self`: the cell for which we want to compute the neighbours
-    /// * `index_c`: the current cell index of a potential neighbour.
-    ///     Each recursive step modifies a subsequent feature of this index.
-    /// * `j` : the index of the feature to modify in the current recursive step.
-    /// * `cells`: hashmap containing  the indexes of all cells in the d-dimensional space.
-    ///
-    /// ## Side effects
-    ///
-    /// Fills `self.neighbour_cell_indexes` with the indexes (of the hashmap)
-    /// where the cell neighbours can be found
-    fn get_neighbours_rec(&mut self, index_c: &Array1<i64>, j: usize, cells: &CellTable) {
-        let dimensionality = self.index.dim();
-        // Maximum distance between two cells indexes for them to be neighbours.
-        let max_dist_squared = 4 * dimensionality as i64;
-
-        // The distance between two points can only increase if additional dimensions are
-        // added
-        let part_dist_squared = part_l2_dist_squared(self.index.view(), index_c.view(), j);
-        // So if the distance on the first j dimensions is already too big it makes no sense to go forward
-        if part_dist_squared > max_dist_squared {
-            return;
-        }
-
-        let max_dist = F::cast(max_dist_squared).sqrt();
-        // Floored so that it can be used as the maximum step for translation
-        // in a single dimension
-        let max_one_dim_trasl = max_dist.floor().to_i64().unwrap();
-        let mut new_index = index_c.clone();
-        let j_ind = index_c[j];
-
-        for nval in j_ind - max_one_dim_trasl..=j_ind + max_one_dim_trasl {
-            new_index[j] = nval;
-            if j < dimensionality - 1 {
-                self.get_neighbours_rec(&new_index, j + 1, cells);
-            } else {
-                if let Some(i) = cells.get(&new_index) {
-                    self.neighbour_cell_indexes.push(*i);
-                }
-            }
-        }
     }
 
     pub fn label(
@@ -272,11 +219,4 @@ impl<F: Float> Cell<F> {
             self.core_info.root = TreeStructure::build_structure(core_points, params);
         }
     }
-}
-
-fn part_l2_dist_squared(arr1: ArrayView1<i64>, arr2: ArrayView1<i64>, max_dim: usize) -> i64 {
-    if max_dim == 0 {
-        return 0;
-    }
-    (&arr1 - &arr2).mapv_into(|x| x * x).sum()
 }

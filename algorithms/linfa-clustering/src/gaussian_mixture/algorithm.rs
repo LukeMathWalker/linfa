@@ -154,7 +154,7 @@ impl<F: Float> GaussianMixtureModel<F> {
                 );
                 let totals = &resp.sum_axis(Axis(1)).insert_axis(Axis(0));
                 resp = (resp.reversed_axes() / totals).reversed_axes();
-                resp.mapv(|v| F::cast(v))
+                resp.mapv(F::cast)
             }
         };
 
@@ -289,7 +289,7 @@ impl<F: Float> GaussianMixtureModel<F> {
         observations: &ArrayBase<D, Ix2>,
     ) -> Result<(F, Array2<F>)> {
         let (log_prob_norm, log_resp) = self.estimate_log_prob_resp(&observations);
-        let log_mean = log_prob_norm.mean().unwrap();
+        let log_mean = log_prob_norm.mean().ok_or(linfa::Error::NotEnoughSamples)?;
         Ok((log_mean, log_resp))
     }
 
@@ -458,10 +458,10 @@ impl<F: Float, R: Rng + SeedableRng + Clone, D: Data<Elem = F>, T>
 impl<F: Float + Lapack + Scalar, D: Data<Elem = F>> PredictRef<ArrayBase<D, Ix2>, Array1<usize>>
     for GaussianMixtureModel<F>
 {
-    fn predict_ref<'a>(&'a self, observations: &ArrayBase<D, Ix2>) -> Array1<usize> {
+    fn predict_ref<'a>(&'_ self, observations: &ArrayBase<D, Ix2>) -> Array1<usize> {
         let (_, log_resp) = self.estimate_log_prob_resp(&observations);
         log_resp
-            .mapv(|v| Scalar::exp(v))
+            .mapv(Scalar::exp)
             .map_axis(Axis(1), |row| row.argmax().unwrap())
     }
 }

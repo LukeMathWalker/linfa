@@ -1,7 +1,7 @@
-use std::{cmp::Reverse, collections::BinaryHeap, marker::PhantomData};
+use std::{cmp::Reverse, collections::BinaryHeap};
 
 use linfa::Float;
-use ndarray::{Array1, Array2};
+use ndarray::{Array1, ArrayBase, Data, Ix2};
 use noisy_float::{checkers::FiniteChecker, NoisyFloat};
 
 use crate::{
@@ -11,17 +11,19 @@ use crate::{
 };
 
 // Partition the points using median value
-fn partition<F: Float>(mut points: Vec<Point<F>>) -> (Vec<Point<F>>, Point<F>, Vec<Point<F>>) {
+fn partition<F: Float>(
+    mut points: Vec<(Point<F>, usize)>,
+) -> (Vec<(Point<F>, usize)>, Point<F>, Vec<(Point<F>, usize)>) {
     debug_assert!(points.len() >= 2);
 
     // Spread of a dimension is measured using range, which is suceptible to skew. It may be better
     // to use STD or variance.
-    let max_spread_dim = (0..points[0].len())
+    let max_spread_dim = (0..points[0].0.len())
         .map(|dim| {
             // Find the range of each dimension
             let (max, min) = points
                 .iter()
-                .map(|p| p[dim])
+                .map(|p| p.0[dim])
                 .fold((F::neg_infinity(), F::infinity()), |(a, b), c| {
                     (F::max(a, c), F::min(b, c))
                 });
@@ -35,15 +37,16 @@ fn partition<F: Float>(mut points: Vec<Point<F>>) -> (Vec<Point<F>>, Point<F>, V
     let mid = points.len() / 2;
     // Compute median on the chosen dimension in linear time
     let median = order_stat::kth_by(&mut points, mid, |p1, p2| {
-        p1[max_spread_dim]
-            .partial_cmp(&p2[max_spread_dim])
+        p1.0[max_spread_dim]
+            .partial_cmp(&p2.0[max_spread_dim])
             .expect("NaN in data")
     })
+    .0
     .reborrow();
 
     let (mut left, mut right): (Vec<_>, Vec<_>) = points
         .into_iter()
-        .partition(|pt| pt[max_spread_dim] < median[max_spread_dim]);
+        .partition(|pt| pt.0[max_spread_dim] < median[max_spread_dim]);
     // We can get an empty left partition with degenerate data where all points are equal and
     // gathered in the right partition.  This ensures that the larger partition will always shrink,
     // guaranteeing algorithm termination.
@@ -73,7 +76,7 @@ enum BallTreeInner<'a, F: Float> {
     Leaf {
         center: Array1<F>,
         radius: F,
-        points: Vec<Point<'a, F>>,
+        points: Vec<(Point<'a, F>, usize)>,
     },
     // Sphere that encompasses both children
     Branch {
@@ -85,19 +88,26 @@ enum BallTreeInner<'a, F: Float> {
 }
 
 impl<'a, F: Float> BallTreeInner<'a, F> {
-    fn new<D: Distance<F>>(points: Vec<Point<'a, F>>, leaf_size: usize, dist_fn: &D) -> Self {
+    fn new<D: Distance<F>>(
+        points: Vec<(Point<'a, F>, usize)>,
+        leaf_size: usize,
+        dist_fn: &D,
+    ) -> Self {
         if points.len() <= leaf_size {
             // Leaf node
-            if let Some(dim) = points.first().map(|p| p.len()) {
+            if let Some(dim) = points.first().map(|p| p.0.len()) {
                 // Since we don't need to partition, we can center the sphere around the average of
                 // all points
                 let center = {
                     let mut c = Array1::zeros(dim);
-                    points.iter().for_each(|p| c += p);
+                    points.iter().for_each(|p| c += &p.0);
                     c / F::from(points.len()).unwrap()
                 };
-                let radius =
-                    calc_radius(points.iter().map(|p| p.reborrow()), center.view(), dist_fn);
+                let radius = calc_radius(
+                    points.iter().map(|p| p.0.reborrow()),
+                    center.view(),
+                    dist_fn,
+                );
                 BallTreeInner::Leaf {
                     center,
                     radius,
@@ -116,7 +126,7 @@ impl<'a, F: Float> BallTreeInner<'a, F> {
             let (aps, center, bps) = partition(points);
             debug_assert!(!aps.is_empty() && !bps.is_empty());
             let radius = calc_radius(
-                aps.iter().chain(bps.iter()).map(|p| p.reborrow()),
+                aps.iter().chain(bps.iter()).map(|p| p.0.reborrow()),
                 center,
                 dist_fn,
             );
@@ -156,7 +166,11 @@ pub struct BallTreeIndex<'a, F: Float, D: Distance<F>> {
 
 impl<'a, F: Float, D: Distance<F>> BallTreeIndex<'a, F, D> {
     /// Creates a `BallTreeIndex` using the K-D construction algorithm
-    pub fn new(batch: &'a Array2<F>, leaf_size: usize, dist_fn: D) -> Result<Self, BuildError> {
+    pub fn new<DT: Data<Elem = F>>(
+        batch: &'a ArrayBase<DT, Ix2>,
+        leaf_size: usize,
+        dist_fn: D,
+    ) -> Result<Self, BuildError> {
         let dim = batch.ncols();
         let len = batch.nrows();
         if leaf_size == 0 {
@@ -164,7 +178,12 @@ impl<'a, F: Float, D: Distance<F>> BallTreeIndex<'a, F, D> {
         } else if dim == 0 {
             Err(BuildError::ZeroDimension)
         } else {
-            let points: Vec<_> = batch.genrows().into_iter().collect();
+            let points: Vec<_> = batch
+                .genrows()
+                .into_iter()
+                .enumerate()
+                .map(|(i, pt)| (pt, i))
+                .collect();
             Ok(BallTreeIndex {
                 tree: BallTreeInner::new(points, leaf_size, &dist_fn),
                 dist_fn,
@@ -179,7 +198,7 @@ impl<'a, F: Float, D: Distance<F>> BallTreeIndex<'a, F, D> {
         point: Point<'b, F>,
         k: usize,
         max_radius: F,
-    ) -> Result<Vec<Point<F>>, NnError> {
+    ) -> Result<Vec<(Point<F>, usize)>, NnError> {
         if self.dim != point.len() {
             Err(NnError::WrongDimension)
         } else if self.len == 0 {
@@ -204,7 +223,7 @@ impl<'a, F: Float, D: Distance<F>> BallTreeIndex<'a, F, D> {
                 match elem {
                     BallTreeInner::Leaf { points, .. } => {
                         for p in points {
-                            let dist = self.dist_fn.rdistance(point, p.reborrow());
+                            let dist = self.dist_fn.rdistance(point, p.0.reborrow());
                             if dist < max_radius
                                 && (out.len() < k || out.peek().unwrap().dist > dist)
                             {
@@ -231,18 +250,27 @@ impl<'a, F: Float, D: Distance<F>> BallTreeIndex<'a, F, D> {
             Ok(out
                 .into_sorted_vec()
                 .into_iter()
-                .map(|e| e.elem.reborrow())
+                .map(|e| e.elem)
+                .map(|(pt, i)| (pt.reborrow(), *i))
                 .collect())
         }
     }
 }
 
 impl<'a, F: Float, D: Distance<F>> NearestNeighbourIndex<F> for BallTreeIndex<'a, F, D> {
-    fn k_nearest<'b>(&self, point: Point<'b, F>, k: usize) -> Result<Vec<Point<F>>, NnError> {
+    fn k_nearest<'b>(
+        &self,
+        point: Point<'b, F>,
+        k: usize,
+    ) -> Result<Vec<(Point<F>, usize)>, NnError> {
         self.nn_helper(point, k, F::infinity())
     }
 
-    fn within_range<'b>(&self, point: Point<'b, F>, range: F) -> Result<Vec<Point<F>>, NnError> {
+    fn within_range<'b>(
+        &self,
+        point: Point<'b, F>,
+        range: F,
+    ) -> Result<Vec<(Point<F>, usize)>, NnError> {
         let range = self.dist_fn.dist_to_rdist(range);
         self.nn_helper(point, self.len, range)
     }
@@ -253,21 +281,22 @@ impl<'a, F: Float, D: Distance<F>> NearestNeighbourIndex<F> for BallTreeIndex<'a
 /// where `k` is the number of points returned by the query. Calling `from_batch` returns a
 /// [`BallTreeIndex`](struct.BallTreeIndex.html).
 ///
-/// More details can be found [here](https://en.wikipedia.org/wiki/Ball_tree).
+/// More details can be found [here](https://en.wikipedia.org/wiki/Ball_tree). This implementation
+/// is based off of the [ball_tree](https://docs.rs/ball-tree/0.2.0/ball_tree/) crate.
 #[derive(Default, Clone, Debug)]
-pub struct BallTree<F: Float>(PhantomData<F>);
+pub struct BallTree;
 
-impl<F: Float> BallTree<F> {
+impl BallTree {
     /// Creates an instance of `BallTree`
     pub fn new() -> Self {
-        Self(PhantomData)
+        Self
     }
 }
 
-impl<F: Float, D: 'static + Distance<F>> NearestNeighbour<F, D> for BallTree<F> {
-    fn from_batch_with_leaf_size<'a>(
+impl NearestNeighbour for BallTree {
+    fn from_batch_with_leaf_size<'a, F: Float, DT: Data<Elem = F>, D: 'a + Distance<F>>(
         &self,
-        batch: &'a Array2<F>,
+        batch: &'a ArrayBase<DT, Ix2>,
         leaf_size: usize,
         dist_fn: D,
     ) -> Result<Box<dyn 'a + NearestNeighbourIndex<F>>, BuildError> {
@@ -292,12 +321,22 @@ mod test {
         exp_right: Array2<f64>,
         exp_rad: f64,
     ) {
-        let vec: Vec<_> = input.genrows().into_iter().collect();
+        let vec: Vec<_> = input
+            .genrows()
+            .into_iter()
+            .enumerate()
+            .map(|(i, p)| (p, i))
+            .collect();
         let (l, mid, r) = partition(vec.clone());
+        let l: Vec<_> = l.into_iter().map(|(p, _)| p).collect();
+        let r: Vec<_> = r.into_iter().map(|(p, _)| p).collect();
         assert_abs_diff_eq!(stack(Axis(0), &l).unwrap(), exp_left);
         assert_abs_diff_eq!(mid.to_owned(), exp_med);
         assert_abs_diff_eq!(stack(Axis(0), &r).unwrap(), exp_right);
-        assert_abs_diff_eq!(calc_radius(vec.iter().cloned(), mid, &L2Dist), exp_rad);
+        assert_abs_diff_eq!(
+            calc_radius(vec.iter().map(|(p, _)| p.reborrow()), mid, &L2Dist),
+            exp_rad
+        );
     }
 
     #[test]

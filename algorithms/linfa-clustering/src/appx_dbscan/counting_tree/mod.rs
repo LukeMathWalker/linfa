@@ -30,7 +30,7 @@ impl<F: Float> TreeStructure<F> {
         let structure = TreeStructure {
             cell_center: cell_center_from_cell_index(cell_index.view(), side_size),
             cnt: 0,
-            side_size: side_size,
+            side_size,
             children: HashMap::new(),
         };
         structure
@@ -52,7 +52,7 @@ impl<F: Float> TreeStructure<F> {
         points: Vec<ArrayView1<F>>,
         params: &AppxDbscanHyperParams<F>,
     ) -> TreeStructure<F> {
-        if points.len() == 0 {
+        if points.is_empty() {
             panic!("AppxDbscan::build structure internal error: attempting to initialize counting tree with no points");
         }
         let dimensionality = points[0].dim();
@@ -74,12 +74,12 @@ impl<F: Float> TreeStructure<F> {
             let mut prev_child = &mut root;
             //level 0 is already used by the root
             for _ in 1..=levels_count {
-                curr_side_size = curr_side_size / F::cast(2.0);
+                curr_side_size /= F::cast(2.0);
                 let index_arr = get_cell_index(point, curr_side_size);
                 let curr_child: &mut TreeStructure<F> = prev_child
                     .children
                     .entry(index_arr.clone())
-                    .or_insert(TreeStructure::new(&index_arr, curr_side_size));
+                    .or_insert_with(|| TreeStructure::new(&index_arr, curr_side_size));
                 curr_child.cnt += 1;
                 prev_child = curr_child;
             }
@@ -107,7 +107,7 @@ impl<F: Float> TreeStructure<F> {
                 ans += self.cnt;
             }
             IntersectionType::Intersecting => {
-                if self.children.len() > 0 {
+                if !self.children.is_empty() {
                     for child in self.children.values() {
                         ans += child.approximate_range_counting(q, params);
                         // There is no need to know the exact count
@@ -202,9 +202,10 @@ pub fn determine_intersection<F: Float>(
     }
 
     if farthest_corner_distance < params.appx_tolerance() {
-        return IntersectionType::FullyCovered;
+        IntersectionType::FullyCovered
+    } else {
+        IntersectionType::Intersecting
     }
-    return IntersectionType::Intersecting;
 }
 
 /// Gets the coordinates of all the corners (2^D) of a cell given its center points and its side size.

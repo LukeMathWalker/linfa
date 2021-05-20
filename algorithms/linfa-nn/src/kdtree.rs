@@ -1,7 +1,5 @@
-use std::marker::PhantomData;
-
 use linfa::Float;
-use ndarray::{aview1, Array2};
+use ndarray::{aview1, ArrayBase, Data, Ix2};
 
 use crate::{
     distance::Distance, BuildError, NearestNeighbour, NearestNeighbourIndex, NnError, Point,
@@ -9,20 +7,30 @@ use crate::{
 
 /// Spatial indexing structure created by [`KdTree`](struct.KdTree.html)
 #[derive(Debug)]
-pub struct KdTreeIndex<'a, F: Float, D: Distance<F>>(kdtree::KdTree<F, Point<'a, F>, &'a [F]>, D);
+pub struct KdTreeIndex<'a, F: Float, D: Distance<F>>(
+    kdtree::KdTree<F, (Point<'a, F>, usize), &'a [F]>,
+    D,
+);
 
 impl<'a, F: Float, D: Distance<F>> KdTreeIndex<'a, F, D> {
     /// Creates a new `KdTreeIndex`
-    pub fn new(batch: &'a Array2<F>, leaf_size: usize, dist_fn: D) -> Result<Self, BuildError> {
+    pub fn new<DT: Data<Elem = F>>(
+        batch: &'a ArrayBase<DT, Ix2>,
+        leaf_size: usize,
+        dist_fn: D,
+    ) -> Result<Self, BuildError> {
         if leaf_size == 0 {
             Err(BuildError::EmptyLeaf)
         } else if batch.ncols() == 0 {
             Err(BuildError::ZeroDimension)
         } else {
             let mut tree = kdtree::KdTree::with_capacity(batch.ncols().max(1), leaf_size);
-            for point in batch.genrows() {
-                tree.add(point.to_slice().expect("views should be contiguous"), point)
-                    .unwrap();
+            for (i, point) in batch.genrows().into_iter().enumerate() {
+                tree.add(
+                    point.to_slice().expect("views should be contiguous"),
+                    (point, i),
+                )
+                .unwrap();
             }
             Ok(Self(tree, dist_fn))
         }
@@ -40,7 +48,11 @@ impl From<kdtree::ErrorKind> for NnError {
 }
 
 impl<'a, F: Float, D: Distance<F>> NearestNeighbourIndex<F> for KdTreeIndex<'a, F, D> {
-    fn k_nearest<'b>(&self, point: Point<'b, F>, k: usize) -> Result<Vec<Point<F>>, NnError> {
+    fn k_nearest<'b>(
+        &self,
+        point: Point<'b, F>,
+        k: usize,
+    ) -> Result<Vec<(Point<F>, usize)>, NnError> {
         Ok(self
             .0
             .nearest(
@@ -49,11 +61,15 @@ impl<'a, F: Float, D: Distance<F>> NearestNeighbourIndex<F> for KdTreeIndex<'a, 
                 &|a, b| self.1.rdistance(aview1(a), aview1(b)),
             )?
             .into_iter()
-            .map(|(_, pt)| pt.reborrow())
+            .map(|(_, (pt, pos))| (pt.reborrow(), *pos))
             .collect())
     }
 
-    fn within_range<'b>(&self, point: Point<'b, F>, range: F) -> Result<Vec<Point<F>>, NnError> {
+    fn within_range<'b>(
+        &self,
+        point: Point<'b, F>,
+        range: F,
+    ) -> Result<Vec<(Point<F>, usize)>, NnError> {
         let range = self.1.dist_to_rdist(range);
         Ok(self
             .0
@@ -63,13 +79,13 @@ impl<'a, F: Float, D: Distance<F>> NearestNeighbourIndex<F> for KdTreeIndex<'a, 
                 &|a, b| self.1.rdistance(aview1(a), aview1(b)),
             )?
             .into_iter()
-            .map(|(_, pt)| pt.reborrow())
+            .map(|(_, (pt, pos))| (pt.reborrow(), *pos))
             .collect())
     }
 }
 
-/// Implementation of K-D tree, a space-partitioning data structure.  For each parent node, the
-/// indexed points are split with a hyperplane into two child nodes. Due to its tree-like
+/// Implementation of K-D tree, a fast space-partitioning data structure.  For each parent node,
+/// the indexed points are split with a hyperplane into two child nodes. Due to its tree-like
 /// structure, the K-D tree performs spatial queries in `O(k * logN)` time, where `k` is the number
 /// of points returned by the query. Calling `from_batch` returns a [`KdTree`](struct.KdTree.html).
 ///
@@ -78,19 +94,19 @@ impl<'a, F: Float, D: Distance<F>> NearestNeighbourIndex<F> for KdTreeIndex<'a, 
 /// Unlike other `NearestNeighbour` implementations, `KdTree` requires that points be laid out
 /// contiguously in memory and will panic otherwise.
 #[derive(Default, Clone, Debug)]
-pub struct KdTree<F: Float>(PhantomData<F>);
+pub struct KdTree;
 
-impl<F: Float> KdTree<F> {
+impl KdTree {
     /// Creates an instance of `KdTree`
     pub fn new() -> Self {
-        Self(PhantomData)
+        Self
     }
 }
 
-impl<F: Float, D: 'static + Distance<F>> NearestNeighbour<F, D> for KdTree<F> {
-    fn from_batch_with_leaf_size<'a>(
+impl NearestNeighbour for KdTree {
+    fn from_batch_with_leaf_size<'a, F: Float, DT: Data<Elem = F>, D: 'a + Distance<F>>(
         &self,
-        batch: &'a Array2<F>,
+        batch: &'a ArrayBase<DT, Ix2>,
         leaf_size: usize,
         dist_fn: D,
     ) -> Result<Box<dyn 'a + NearestNeighbourIndex<F>>, BuildError> {

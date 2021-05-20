@@ -1,6 +1,9 @@
 use crate::dbscan::hyperparameters::{DbscanHyperParams, DbscanHyperParamsBuilder};
-use ndarray::{Array1, ArrayBase, Axis, Data, Ix2};
-use ndarray_stats::DeviationExt;
+use linfa_nn::{
+    distance::{Distance, L2Dist},
+    CommonNearestNeighbour, NearestNeighbour, NearestNeighbourIndex,
+};
+use ndarray::{Array1, ArrayBase, Data, Ix2};
 use std::collections::VecDeque;
 
 use linfa::traits::Transformer;
@@ -71,13 +74,36 @@ use linfa::{DatasetBase, Float};
 pub struct Dbscan;
 
 impl Dbscan {
-    pub fn params<F: Float>(min_points: usize) -> DbscanHyperParamsBuilder<F> {
-        DbscanHyperParams::new(min_points)
+    /// Configures the hyperparameters with the minimum number of points required to form a cluster
+    ///
+    /// Defaults are provided if the optional parameters are not specified:
+    /// * `tolerance = 1e-4`
+    /// * `dist_fn = L2Dist` (Euclidean distance)
+    /// * `nn_impl = KdTree`
+    pub fn params<F: Float>(
+        min_points: usize,
+    ) -> DbscanHyperParamsBuilder<F, L2Dist, CommonNearestNeighbour> {
+        Self::params_with_custom_fields(min_points, L2Dist, CommonNearestNeighbour::KdTree)
+    }
+
+    /// Configures the hyperparameters with the minimum number of points, a custom distance metric,
+    /// and a custom nearest neighbour algorithm
+    pub fn params_with_custom_fields<F: Float, D: Distance<F>, N: NearestNeighbour>(
+        min_points: usize,
+        dist_fn: D,
+        nn_impl: N,
+    ) -> DbscanHyperParamsBuilder<F, D, N> {
+        DbscanHyperParamsBuilder {
+            min_points,
+            tolerance: F::cast(1e-4),
+            dist_fn,
+            nn_impl,
+        }
     }
 }
 
-impl<F: Float, D: Data<Elem = F>> Transformer<&ArrayBase<D, Ix2>, Array1<Option<usize>>>
-    for DbscanHyperParams<F>
+impl<F: Float, D: Data<Elem = F>, DF: Distance<F>, N: NearestNeighbour>
+    Transformer<&ArrayBase<D, Ix2>, Array1<Option<usize>>> for DbscanHyperParams<F, DF, N>
 {
     fn transform(&self, observations: &ArrayBase<D, Ix2>) -> Array1<Option<usize>> {
         let mut cluster_memberships = Array1::from_elem(observations.nrows(), None);
@@ -85,13 +111,23 @@ impl<F: Float, D: Data<Elem = F>> Transformer<&ArrayBase<D, Ix2>, Array1<Option<
         // Tracks whether a value is in the search queue to prevent duplicates
         let mut search_found = vec![false; observations.nrows()];
         let mut search_queue = VecDeque::with_capacity(observations.nrows());
+        // TODO what to do about this unwrap
+        let nn = self
+            .nn_impl()
+            .from_batch(&observations, self.dist_fn().clone())
+            .unwrap();
 
         for i in 0..observations.nrows() {
             if cluster_memberships[i].is_some() {
                 continue;
             }
-            let (neighbor_count, neighbors) =
-                self.find_neighbors(i, observations, self.tolerance(), &cluster_memberships);
+            let (neighbor_count, neighbors) = self.find_neighbors(
+                &*nn,
+                i,
+                observations,
+                self.tolerance(),
+                &cluster_memberships,
+            );
             if neighbor_count < self.minimum_points() {
                 continue;
             }
@@ -105,6 +141,7 @@ impl<F: Float, D: Data<Elem = F>> Transformer<&ArrayBase<D, Ix2>, Array1<Option<
                 search_found[candidate_idx] = false;
 
                 let (neighbor_count, neighbors) = self.find_neighbors(
+                    &*nn,
                     candidate_idx,
                     observations,
                     self.tolerance(),
@@ -127,11 +164,34 @@ impl<F: Float, D: Data<Elem = F>> Transformer<&ArrayBase<D, Ix2>, Array1<Option<
     }
 }
 
-impl<F: Float, D: Data<Elem = F>, T>
+impl<F: Float, D: Distance<F>, N: NearestNeighbour> DbscanHyperParams<F, D, N> {
+    fn find_neighbors(
+        &self,
+        nn: &dyn NearestNeighbourIndex<F>,
+        idx: usize,
+        observations: &ArrayBase<impl Data<Elem = F>, Ix2>,
+        eps: F,
+        clusters: &Array1<Option<usize>>,
+    ) -> (usize, Vec<usize>) {
+        let candidate = observations.row(idx);
+        let mut res = Vec::with_capacity(self.minimum_points());
+        let mut count = 0;
+        // TODO what to do about this unwrap?
+        for (_, i) in nn.within_range(candidate.view(), eps).unwrap().into_iter() {
+            count += 1;
+            if clusters[i].is_none() && i != idx {
+                res.push(i);
+            }
+        }
+        (count, res)
+    }
+}
+
+impl<F: Float, D: Data<Elem = F>, T, DF: Distance<F>, N: NearestNeighbour>
     Transformer<
         DatasetBase<ArrayBase<D, Ix2>, T>,
         DatasetBase<ArrayBase<D, Ix2>, Array1<Option<usize>>>,
-    > for DbscanHyperParams<F>
+    > for DbscanHyperParams<F, DF, N>
 {
     fn transform(
         &self,
@@ -142,52 +202,19 @@ impl<F: Float, D: Data<Elem = F>, T>
     }
 }
 
-impl<F: Float, D: Data<Elem = F>> Transformer<&ArrayBase<D, Ix2>, Array1<Option<usize>>>
-    for DbscanHyperParamsBuilder<F>
-{
-    fn transform(&self, observations: &ArrayBase<D, Ix2>) -> Array1<Option<usize>> {
+impl<F: Float, DF: 'static + Distance<F>, N: NearestNeighbour> DbscanHyperParamsBuilder<F, DF, N> {
+    pub fn transform<D: Data<Elem = F>>(
+        self,
+        observations: &ArrayBase<D, Ix2>,
+    ) -> Array1<Option<usize>> {
         self.build().transform(observations)
     }
-}
 
-impl<F: Float, D: Data<Elem = F>, T>
-    Transformer<
-        DatasetBase<ArrayBase<D, Ix2>, T>,
-        DatasetBase<ArrayBase<D, Ix2>, Array1<Option<usize>>>,
-    > for DbscanHyperParamsBuilder<F>
-{
-    fn transform(
-        &self,
+    pub fn transform_dataset<D: Data<Elem = F>, T>(
+        self,
         dataset: DatasetBase<ArrayBase<D, Ix2>, T>,
     ) -> DatasetBase<ArrayBase<D, Ix2>, Array1<Option<usize>>> {
         self.build().transform(dataset)
-    }
-}
-
-impl<F: Float> DbscanHyperParams<F> {
-    fn find_neighbors(
-        &self,
-        idx: usize,
-        observations: &ArrayBase<impl Data<Elem = F>, Ix2>,
-        eps: F,
-        clusters: &Array1<Option<usize>>,
-    ) -> (usize, Vec<usize>) {
-        let candidate = observations.row(idx);
-        let mut res = Vec::with_capacity(self.minimum_points());
-        let mut count = 0;
-        for (i, (obs, cluster)) in observations
-            .axis_iter(Axis(0))
-            .zip(clusters.iter())
-            .enumerate()
-        {
-            if F::cast(candidate.l2_dist(&obs).unwrap()) < eps {
-                count += 1;
-                if cluster.is_none() && i != idx {
-                    res.push(i);
-                }
-            }
-        }
-        (count, res)
     }
 }
 
@@ -195,8 +222,6 @@ impl<F: Float> DbscanHyperParams<F> {
 mod tests {
     use super::*;
     use ndarray::{arr1, arr2, s, Array2};
-
-    use linfa::traits::Transformer;
 
     #[test]
     fn nested_clusters() {

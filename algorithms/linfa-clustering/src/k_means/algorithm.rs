@@ -406,7 +406,7 @@ impl<F: Float, D: Data<Elem = F>> PredictRef<ArrayBase<D, Ix2>, Array1<usize>> f
     ///
     /// You can retrieve the centroid associated to an index using the
     /// [`centroids` method](#method.centroids).
-    fn predict_ref<'a>(&'a self, observations: &ArrayBase<D, Ix2>) -> Array1<usize> {
+    fn predict_ref<'a>(&'_ self, observations: &ArrayBase<D, Ix2>) -> Array1<usize> {
         compute_cluster_memberships(&self.centroids, &observations.view())
     }
 }
@@ -416,7 +416,7 @@ impl<F: Float, D: Data<Elem = F>> PredictRef<ArrayBase<D, Ix1>, usize> for KMean
     ///
     /// You can retrieve the centroid associated to an index using the
     /// [`centroids` method](#method.centroids).
-    fn predict_ref<'a>(&'a self, observation: &ArrayBase<D, Ix1>) -> usize {
+    fn predict_ref<'a>(&'_ self, observation: &ArrayBase<D, Ix1>) -> usize {
         closest_centroid(&self.centroids, &observation).0
     }
 }

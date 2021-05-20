@@ -38,6 +38,7 @@ thiserror = "1"
 partitions = "0.2.4"
 
 linfa = { version = "0.4.0", path = "../..", features = ["ndarray-linalg"] }
+linfa-nn = { version = "0.1.0", path = "../linfa-nn" }
 
 [dev-dependencies]
 ndarray-npy = { version = "0.7", default-features = false }
