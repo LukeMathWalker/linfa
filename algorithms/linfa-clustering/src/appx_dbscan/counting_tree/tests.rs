@@ -1,12 +1,18 @@
+use crate::UncheckedAppxDbscanHyperParams;
+
 use super::*;
-use crate::AppxDbscanHyperParams;
 
 use approx::assert_abs_diff_eq;
+use linfa::prelude::UncheckedHyperParams;
 use ndarray::{arr1, ArrayView};
 
 #[test]
 fn counting_test() {
-    let params = AppxDbscanHyperParams::new(2).tolerance(2.0).slack(0.1);
+    let params = UncheckedAppxDbscanHyperParams::new(2)
+        .tolerance(2.0)
+        .slack(0.1)
+        .check()
+        .unwrap();
     let l = params.tolerance / 2_f64.sqrt();
     let q_fixed = [l, l];
     let q2_fixed = [-l, l];
@@ -51,9 +57,11 @@ fn counting_test() {
 fn edge_points_counting_test() {
     let epsilon: f64 = 1.0;
     let slack = 0.00001;
-    let params = AppxDbscanHyperParams::new(2)
+    let params = UncheckedAppxDbscanHyperParams::new(2)
         .tolerance(epsilon)
-        .slack(slack);
+        .slack(slack)
+        .check()
+        .unwrap();
 
     let central: Array1<f64> = Array1::from_shape_vec(2, vec![0.39, 0.0]).unwrap();
     let left: Array1<f64> = Array1::from_shape_vec(2, vec![-0.6, 0.0]).unwrap();
@@ -126,7 +134,11 @@ fn get_corners_test() {
 
 #[test]
 fn determine_intersection_test() {
-    let params = AppxDbscanHyperParams::new(2).tolerance(2.0).slack(0.1);
+    let params = UncheckedAppxDbscanHyperParams::new(2)
+        .tolerance(2.0)
+        .slack(0.1)
+        .check()
+        .unwrap();
     let l = params.tolerance / 2.0_f64.sqrt();
     let fixed_point = [l / 2.0, (3.0 / 2.0) * l];
     let q = ArrayView::from(&fixed_point);

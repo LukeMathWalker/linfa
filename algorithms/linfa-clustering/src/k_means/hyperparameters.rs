@@ -1,6 +1,7 @@
 use crate::KMeansParamsError;
 
 use super::init::KMeansInit;
+use linfa::prelude::*;
 use linfa::Float;
 use linfa_nn::distance::Distance;
 use ndarray_rand::rand::Rng;
@@ -38,17 +39,9 @@ pub struct KMeansHyperParams<F: Float, R: Rng, D: Distance<F>> {
 
 /// An helper struct used to construct a set of [valid hyperparameters](struct.KMeansHyperParams.html) for
 /// the [K-means algorithm](struct.KMeans.html) (using the builder pattern).
-pub struct KMeansHyperParamsBuilder<F: Float, R: Rng, D: Distance<F>> {
-    n_runs: usize,
-    tolerance: F,
-    max_n_iterations: u64,
-    n_clusters: usize,
-    init: KMeansInit<F>,
-    rng: R,
-    dist_fn: D,
-}
+pub struct UncheckedKMeansHyperParams<F: Float, R: Rng, D: Distance<F>>(KMeansHyperParams<F, R, D>);
 
-impl<F: Float, R: Rng, D: Distance<F>> KMeansHyperParamsBuilder<F, R, D> {
+impl<F: Float, R: Rng, D: Distance<F>> UncheckedKMeansHyperParams<F, R, D> {
     /// `new` lets us configure our training algorithm parameters:
     /// * we will be looking for `n_clusters` in the training dataset;
     /// * the training is considered complete if the euclidean distance
@@ -68,7 +61,7 @@ impl<F: Float, R: Rng, D: Distance<F>> KMeansHyperParamsBuilder<F, R, D> {
     /// * `n_runs = 10`
     /// * `init = KMeansPlusPlus`
     pub fn new(n_clusters: usize, rng: R, dist_fn: D) -> Self {
-        Self {
+        Self(KMeansHyperParams {
             n_runs: 10,
             tolerance: F::cast(1e-4),
             max_n_iterations: 300,
@@ -76,55 +69,57 @@ impl<F: Float, R: Rng, D: Distance<F>> KMeansHyperParamsBuilder<F, R, D> {
             init: KMeansInit::KMeansPlusPlus,
             rng,
             dist_fn,
-        }
+        })
     }
 
     /// Change the value of `n_runs`
     pub fn n_runs(mut self, n_runs: usize) -> Self {
-        self.n_runs = n_runs;
+        self.0.n_runs = n_runs;
         self
     }
 
     /// Change the value of `tolerance`
     pub fn tolerance(mut self, tolerance: F) -> Self {
-        self.tolerance = tolerance;
+        self.0.tolerance = tolerance;
         self
     }
 
     /// Change the value of `max_n_iterations`
     pub fn max_n_iterations(mut self, max_n_iterations: u64) -> Self {
-        self.max_n_iterations = max_n_iterations;
+        self.0.max_n_iterations = max_n_iterations;
         self
     }
 
     /// Change the value of `init`
     pub fn init_method(mut self, init: KMeansInit<F>) -> Self {
-        self.init = init;
+        self.0.init = init;
         self
     }
+}
 
-    /// Return an instance of `KMeansHyperParams` after
-    /// having performed validation checks on all the specified hyperparameters.
-    pub fn build(self) -> Result<KMeansHyperParams<F, R, D>, KMeansParamsError> {
-        if self.n_clusters == 0 {
+impl<F: Float, R: Rng, D: Distance<F>> UncheckedHyperParams
+    for UncheckedKMeansHyperParams<F, R, D>
+{
+    type Checked = KMeansHyperParams<F, R, D>;
+    type Error = KMeansParamsError;
+
+    fn check_ref(&self) -> Result<&Self::Checked, Self::Error> {
+        if self.0.n_clusters == 0 {
             Err(KMeansParamsError::NClusters)
-        } else if self.n_runs == 0 {
+        } else if self.0.n_runs == 0 {
             Err(KMeansParamsError::NRuns)
-        } else if self.tolerance <= F::zero() {
+        } else if self.0.tolerance <= F::zero() {
             Err(KMeansParamsError::Tolerance)
-        } else if self.max_n_iterations == 0 {
+        } else if self.0.max_n_iterations == 0 {
             Err(KMeansParamsError::MaxIterations)
         } else {
-            Ok(KMeansHyperParams {
-                n_clusters: self.n_clusters,
-                n_runs: self.n_runs,
-                tolerance: self.tolerance,
-                init: self.init,
-                dist_fn: self.dist_fn,
-                max_n_iterations: self.max_n_iterations,
-                rng: self.rng,
-            })
+            Ok(&self.0)
         }
+    }
+
+    fn check(self) -> Result<Self::Checked, Self::Error> {
+        self.check_ref()?;
+        Ok(self.0)
     }
 }
 
@@ -171,34 +166,37 @@ impl<F: Float, R: Rng, D: Distance<F>> KMeansHyperParams<F, R, D> {
 
 #[cfg(test)]
 mod tests {
-    use crate::KMeans;
+    use linfa::prelude::UncheckedHyperParams;
+
+    use crate::{KMeans, KMeansParamsError};
 
     #[test]
     fn n_clusters_cannot_be_zero() {
-        assert!(KMeans::<f32, _>::params(0).build().is_err());
+        let res = KMeans::<f32, _>::params(0).check();
+        assert!(matches!(res, Err(KMeansParamsError::NClusters)))
     }
 
     #[test]
     fn tolerance_has_to_positive() {
-        assert!(KMeans::params(1).tolerance(-1.).build().is_err());
+        let res = KMeans::params(1).tolerance(-1.).check();
+        assert!(matches!(res, Err(KMeansParamsError::Tolerance)))
     }
 
     #[test]
     fn tolerance_cannot_be_zero() {
-        assert!(KMeans::params(1).tolerance(0.).build().is_err());
+        let res = KMeans::params(1).tolerance(0.).check();
+        assert!(matches!(res, Err(KMeansParamsError::Tolerance)))
     }
 
     #[test]
     fn max_n_iterations_cannot_be_zero() {
-        assert!(KMeans::params(1)
-            .tolerance(1.)
-            .max_n_iterations(0)
-            .build()
-            .is_err());
+        let res = KMeans::params(1).tolerance(1.).max_n_iterations(0).check();
+        assert!(matches!(res, Err(KMeansParamsError::MaxIterations)))
     }
 
     #[test]
     fn n_runs_cannot_be_zero() {
-        assert!(KMeans::params(1).tolerance(1.).n_runs(0).build().is_err());
+        let res = KMeans::params(1).tolerance(1.).n_runs(0).check();
+        assert!(matches!(res, Err(KMeansParamsError::NRuns)))
     }
 }

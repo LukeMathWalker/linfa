@@ -1,11 +1,9 @@
 use std::cmp::Ordering;
+use std::fmt::Debug;
 
 use crate::k_means::hyperparameters::KMeansHyperParams;
-use crate::KMeansHyperParamsBuilder;
-use crate::{
-    k_means::errors::{KMeansError, Result},
-    KMeansInit,
-};
+use crate::{k_means::errors::KMeansError, KMeansInit};
+use crate::{IncrKMeansError, UncheckedKMeansHyperParams};
 use linfa::{prelude::*, DatasetBase, Float};
 use linfa_nn::distance::{Distance, L2Dist};
 use ndarray::{Array1, Array2, ArrayBase, Axis, Data, DataMut, Ix1, Ix2, Zip};
@@ -91,7 +89,7 @@ use serde_crate::{Deserialize, Serialize};
 /// ```
 /// use linfa::DatasetBase;
 /// use linfa::traits::{Fit, IncrementalFit, Predict};
-/// use linfa_clustering::{KMeansHyperParams, KMeans, generate_blobs};
+/// use linfa_clustering::{KMeansHyperParams, KMeans, generate_blobs, IncrKMeansError};
 /// use ndarray::{Axis, array, s};
 /// use ndarray_rand::rand::SeedableRng;
 /// use rand_isaac::Isaac64Rng;
@@ -119,8 +117,6 @@ use serde_crate::{Deserialize, Serialize};
 ///     // default values will be used.
 ///     let model = KMeans::params_with_rng(n_clusters, rng.clone())
 ///         .tolerance(1e-2)
-///         .build()
-///         .unwrap()
 ///         .fit(&observations)
 ///         .expect("KMeans fitted");
 ///
@@ -141,19 +137,19 @@ use serde_crate::{Deserialize, Serialize};
 ///     let observations = DatasetBase::from(data.clone()).shuffle(&mut rng);
 ///
 ///     let n_clusters = expected_centroids.nrows();
-///     let clf = KMeans::params_with_rng(n_clusters, rng.clone()).tolerance(1e-3).build().unwrap();
+///     let clf = KMeans::params_with_rng(n_clusters, rng.clone()).tolerance(1e-3);
 ///
 ///     // Repeatedly run fit_with on every batch in the dataset until we have converged
 ///     let model = observations
 ///         .sample_chunks(batch_size)
 ///         .cycle()
 ///         .try_fold(None, |current, batch| {
-///             let (model, converged) = clf.fit_with(current, &batch);
-///             if converged {
-///                 // Once we have converged, raise an error to break from the iterator
-///                 Err(model)
-///             } else {
-///                 Ok(Some(model))
+///             match clf.fit_with(current, &batch) {
+///                 // Early stop condition for the kmeans loop
+///                 Ok(model) => Err(model),
+///                 // Continue running if not converged
+///                 Err(IncrKMeansError::NotConverged(model)) => Ok(Some(model)),
+///                 Err(err) => panic!("unexpected kmeans error: {}", err),
 ///             }
 ///         })
 ///         .unwrap_err();
@@ -187,15 +183,15 @@ pub struct KMeans<F: Float, D: Distance<F>> {
 }
 
 impl<F: Float> KMeans<F, L2Dist> {
-    pub fn params(nclusters: usize) -> KMeansHyperParamsBuilder<F, Isaac64Rng, L2Dist> {
-        KMeansHyperParamsBuilder::new(nclusters, Isaac64Rng::seed_from_u64(42), L2Dist)
+    pub fn params(nclusters: usize) -> UncheckedKMeansHyperParams<F, Isaac64Rng, L2Dist> {
+        UncheckedKMeansHyperParams::new(nclusters, Isaac64Rng::seed_from_u64(42), L2Dist)
     }
 
     pub fn params_with_rng<R: Rng>(
         nclusters: usize,
         rng: R,
-    ) -> KMeansHyperParamsBuilder<F, R, L2Dist> {
-        KMeansHyperParamsBuilder::new(nclusters, rng, L2Dist)
+    ) -> UncheckedKMeansHyperParams<F, R, L2Dist> {
+        UncheckedKMeansHyperParams::new(nclusters, rng, L2Dist)
     }
 }
 
@@ -204,8 +200,8 @@ impl<F: Float, D: Distance<F>> KMeans<F, D> {
         nclusters: usize,
         rng: R,
         dist_fn: D,
-    ) -> KMeansHyperParamsBuilder<F, R, D> {
-        KMeansHyperParamsBuilder::new(nclusters, rng, dist_fn)
+    ) -> UncheckedKMeansHyperParams<F, R, D> {
+        UncheckedKMeansHyperParams::new(nclusters, rng, dist_fn)
     }
 
     /// Return the set of centroids as a 2-dimensional matrix with shape
@@ -237,7 +233,10 @@ impl<F: Float, R: Rng + SeedableRng + Clone, DA: Data<Elem = F>, T, D: Distance<
     ///
     /// An instance of `KMeans` is returned.
     ///
-    fn fit(&self, dataset: &DatasetBase<ArrayBase<DA, Ix2>, T>) -> Result<Self::Object> {
+    fn fit(
+        &self,
+        dataset: &DatasetBase<ArrayBase<DA, Ix2>, T>,
+    ) -> Result<Self::Object, KMeansError> {
         let mut rng = self.rng().clone();
         let observations = dataset.records().view();
         let n_samples = dataset.nsamples();
@@ -307,11 +306,18 @@ impl<F: Float, R: Rng + SeedableRng + Clone, DA: Data<Elem = F>, T, D: Distance<
     }
 }
 
-impl<'a, F: Float, R: Rng + Clone + SeedableRng, DA: Data<Elem = F>, T, D: 'a + Distance<F>>
-    IncrementalFit<'a, ArrayBase<DA, Ix2>, T> for KMeansHyperParams<F, R, D>
+impl<
+        'a,
+        F: Float + Debug,
+        R: Rng + Clone + SeedableRng,
+        DA: Data<Elem = F>,
+        T,
+        D: 'a + Distance<F> + Debug,
+    > IncrementalFit<'a, ArrayBase<DA, Ix2>, T, IncrKMeansError<KMeans<F, D>>>
+    for KMeansHyperParams<F, R, D>
 {
     type ObjectIn = Option<KMeans<F, D>>;
-    type ObjectOut = (KMeans<F, D>, bool);
+    type ObjectOut = KMeans<F, D>;
 
     /// Performs a single batch update of the Mini-Batch K-means algorithm.
     ///
@@ -324,7 +330,7 @@ impl<'a, F: Float, R: Rng + Clone + SeedableRng, DA: Data<Elem = F>, T, D: 'a + 
         &self,
         model: Self::ObjectIn,
         dataset: &'a DatasetBase<ArrayBase<DA, Ix2>, T>,
-    ) -> Self::ObjectOut {
+    ) -> Result<Self::ObjectOut, IncrKMeansError<Self::ObjectOut>> {
         let mut rng = self.rng().clone();
         let observations = dataset.records().view();
         let n_samples = dataset.nsamples();
@@ -391,7 +397,11 @@ impl<'a, F: Float, R: Rng + Clone + SeedableRng, DA: Data<Elem = F>, T, D: 'a + 
             .rdistance(model.centroids.view(), new_centroids.view());
         model.centroids = new_centroids;
 
-        (model, dist < self.tolerance())
+        if dist < self.tolerance() {
+            Ok(model)
+        } else {
+            Err(IncrKMeansError::NotConverged(model))
+        }
     }
 }
 
@@ -646,8 +656,6 @@ mod tests {
             let model = KMeans::params_with(3, rng.clone(), dist_fn.clone())
                 .n_runs(1)
                 .init_method(init.clone())
-                .build()
-                .unwrap()
                 .fit(&dataset)
                 .expect("KMeans fitted");
             let clusters = model.predict(dataset);
@@ -664,8 +672,6 @@ mod tests {
             let dataset2 = DatasetBase::from(clusters.records().clone());
             let model2 = KMeans::params_with(3, rng.clone(), dist_fn.clone())
                 .init_method(init.clone())
-                .build()
-                .unwrap()
                 .fit(&dataset2)
                 .expect("KMeans fitted");
             let clusters2 = model2.predict(dataset2);
@@ -807,20 +813,16 @@ mod tests {
             dist_fn: L2Dist,
         };
         let rng = Isaac64Rng::seed_from_u64(45);
-        let params = KMeans::params_with_rng(3, rng)
-            .tolerance(100.0)
-            .build()
-            .unwrap();
+        let params = KMeans::params_with_rng(3, rng).tolerance(100.0);
 
-        let (model, converged) = params.fit_with(Some(model), &dataset1);
+        // Should converge on first try
+        let model = params.fit_with(Some(model), &dataset1).unwrap();
         assert_abs_diff_eq!(model.centroids(), &array![[-0.5, -1.5], [4., 5.], [7., 8.]]);
-        assert!(converged);
 
-        let (model, converged) = params.fit_with(Some(model), &dataset2);
+        let model = params.fit_with(Some(model), &dataset2).unwrap();
         assert_abs_diff_eq!(
             model.centroids(),
             &array![[-6. / 4., -8. / 4.], [4., 5.], [10., 10.]]
         );
-        assert!(converged);
     }
 }

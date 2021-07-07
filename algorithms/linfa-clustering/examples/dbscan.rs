@@ -28,7 +28,9 @@ fn main() {
     );
 
     // Infer an optimal set of centroids based on the training data distribution
-    let cluster_memberships = Dbscan::params(min_points).tolerance(1.).predict(dataset);
+    let cluster_memberships: Result<_, _> =
+        Dbscan::params(min_points).tolerance(1.).predict(dataset);
+    let cluster_memberships = cluster_memberships.unwrap();
 
     // sigle target dataset
     let label_count = cluster_memberships.label_count().remove(0);

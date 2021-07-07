@@ -30,7 +30,7 @@ ndarray-rand = "0.13"
 ndarray-stats = "0.4"
 num-traits = "0.2"
 rand_isaac = "0.3"
-thiserror = "1"
+thiserror = "=1.0.25"
 
 linfa = { version = "0.4.0", path = "../..", features = ["ndarray-linalg"] }
 

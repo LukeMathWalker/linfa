@@ -1,4 +1,4 @@
-use crate::dbscan::hyperparameters::DbscanHyperParams;
+use crate::{dbscan::hyperparameters::DbscanHyperParams, UncheckedDbscanHyperParams};
 use linfa_nn::{
     distance::{Distance, L2Dist},
     CommonNearestNeighbour, NearestNeighbour, NearestNeighbourIndex,
@@ -67,7 +67,8 @@ use linfa::Float;
 /// let min_points = 3;
 /// let clusters = Dbscan::params(min_points)
 ///     .tolerance(1e-2)
-///     .predict(&observations);
+///     .predict(&observations)
+///     .unwrap();
 /// // Points are `None` if noise `Some(id)` if belonging to a cluster.
 /// ```
 ///
@@ -82,7 +83,7 @@ impl Dbscan {
     /// * `nn_algo = KdTree`
     pub fn params<F: Float>(
         min_points: usize,
-    ) -> DbscanHyperParams<F, L2Dist, CommonNearestNeighbour> {
+    ) -> UncheckedDbscanHyperParams<F, L2Dist, CommonNearestNeighbour> {
         Self::params_with(min_points, L2Dist, CommonNearestNeighbour::KdTree)
     }
 
@@ -92,8 +93,8 @@ impl Dbscan {
         min_points: usize,
         dist_fn: D,
         nn_algo: N,
-    ) -> DbscanHyperParams<F, D, N> {
-        DbscanHyperParams::new(min_points, dist_fn, nn_algo)
+    ) -> UncheckedDbscanHyperParams<F, D, N> {
+        UncheckedDbscanHyperParams::new(min_points, dist_fn, nn_algo)
     }
 }
 
@@ -186,7 +187,7 @@ impl<F: Float, D: Distance<F>, N: NearestNeighbour> DbscanHyperParams<F, D, N> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use linfa::traits::Predict;
+    use linfa::{prelude::UncheckedHyperParams, traits::Predict};
     use ndarray::{arr1, arr2, s, Array2};
 
     #[test]
@@ -208,7 +209,11 @@ mod tests {
         data.column_mut(0).slice_mut(s![40..]).fill(5.0);
         data.column_mut(1).slice_mut(s![40..]).fill(5.0);
 
-        let labels = Dbscan::params(2).tolerance(1.0).predict(&data);
+        let labels = Dbscan::params(2)
+            .tolerance(1.0)
+            .check()
+            .unwrap()
+            .predict(&data);
 
         assert!(labels.slice(s![..40]).iter().all(|x| x == &Some(0)));
         assert!(labels.slice(s![40..]).iter().all(|x| x == &Some(1)));
@@ -219,7 +224,7 @@ mod tests {
         let mut data: Array2<f64> = Array2::zeros((5, 2));
         data.row_mut(0).assign(&arr1(&[10.0, 10.0]));
 
-        let labels = Dbscan::params(4).predict(&data);
+        let labels = Dbscan::params(4).check().unwrap().predict(&data);
 
         let expected = arr1(&[None, Some(0), Some(0), Some(0), Some(0)]);
         assert_eq!(labels, expected);
@@ -240,7 +245,11 @@ mod tests {
         ]);
 
         // Run the approximate dbscan with tolerance of 1.1, 5 min points for density
-        let labels = Dbscan::params(5).tolerance(1.1).predict(&data);
+        let labels = Dbscan::params(5)
+            .tolerance(1.1)
+            .check()
+            .unwrap()
+            .predict(&data);
 
         assert_eq!(labels[0], None);
         for id in labels.slice(s![1..]).iter() {
@@ -252,7 +261,7 @@ mod tests {
     fn dataset_too_small() {
         let data: Array2<f64> = Array2::zeros((3, 2));
 
-        let labels = Dbscan::params(4).predict(&data);
+        let labels = Dbscan::params(4).check().unwrap().predict(&data);
         assert!(labels.iter().all(|x| x.is_none()));
     }
 }

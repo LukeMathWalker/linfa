@@ -12,7 +12,6 @@ jobs:
       matrix:
         toolchain:
           - 1.42.0
-          - nightly-2021-03-24
           - beta
           - stable
 
@@ -56,12 +55,12 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly-2021-03-24
+          toolchain: stable
           override: true
 
       - name: Get rustc version
         id: rustc-version
-        run: echo "::set-output name=version::$(cargo +nightly-2021-03-24 --version | cut -d ' ' -f 2)"
+        run: echo "::set-output name=version::$(cargo --version | cut -d ' ' -f 2)"
         shell: bash
 
       - uses: actions/cache@v2
@@ -73,11 +72,11 @@ jobs:
 
       - name: Install tarpaulin
         if: steps.tarpaulin-cache.outputs.cache-hit != 'true'
-        run: cargo +nightly-2021-03-24 install cargo-tarpaulin
+        run: cargo install cargo-tarpaulin
 
       - name: Generate code coverage
         run: |
-          cargo +nightly-2021-03-24 tarpaulin --verbose --features intel-mkl-system --timeout 120 --out Xml --all --release
+          cargo tarpaulin --verbose --features intel-mkl-system --timeout 120 --out Xml --all --release
 
       - name: Upload to codecov.io
         uses: codecov/codecov-action@v1

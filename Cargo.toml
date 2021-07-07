@@ -42,7 +42,7 @@ approx = "0.4"
 ndarray = { version = "0.14", default-features = false, features = ["approx"] }
 ndarray-linalg = { version = "0.13", optional = true }
 
-thiserror = "1"
+thiserror = "=1.0.25"
 
 [dependencies.serde_crate]
 package = "serde"

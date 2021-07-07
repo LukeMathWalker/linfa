@@ -1,9 +1,16 @@
+use crate::UncheckedAppxDbscanHyperParams;
+
 use super::*;
+use linfa::prelude::UncheckedHyperParams;
 use ndarray::Array2;
 
 #[test]
 fn find_cells_test() {
-    let params = AppxDbscanHyperParams::new(2).tolerance(2.0).slack(0.1);
+    let params = UncheckedAppxDbscanHyperParams::new(2)
+        .tolerance(2.0)
+        .slack(0.1)
+        .check()
+        .unwrap();
     let l = params.tolerance / 2_f64.sqrt();
     let points = Array2::from_shape_vec((2, 2), vec![l, -l, -l, l]).unwrap();
     let grid = CellsGrid::new(&points.view(), &params);
@@ -12,7 +19,11 @@ fn find_cells_test() {
 
 #[test]
 fn label_points_test() {
-    let params = AppxDbscanHyperParams::new(2).tolerance(2.0).slack(0.1);
+    let params = UncheckedAppxDbscanHyperParams::new(2)
+        .tolerance(2.0)
+        .slack(0.1)
+        .check()
+        .unwrap();
     let l = params.tolerance / 2_f64.sqrt();
     let all_points = vec![2.0 * l, 2.0 * l, 2.0 * l, 2.0 * l, 2.0 * l, 2.0 * l, l, l];
     let points = Array2::from_shape_vec((4, 2), all_points).unwrap();

@@ -1,7 +1,5 @@
 use thiserror::Error;
 
-pub type Result<T> = std::result::Result<T, KMeansError>;
-
 /// An error when fitting with an invalid hyperparameter
 #[derive(Error, Debug)]
 pub enum KMeansParamsError {
@@ -27,6 +25,19 @@ pub enum KMeansError {
     /// When fitting algorithm does not converge
     #[error("Fitting failed: Did not converge. Try different init parameters or check for degenerate data.")]
     NotConverged,
+    #[error(transparent)]
+    LinfaError(#[from] linfa::error::Error),
+}
+
+#[derive(Error, Debug)]
+pub enum IncrKMeansError<M: std::fmt::Debug> {
+    /// When any of the hyperparameters are set the wrong value
+    #[error("Invalid hyperparameter: {0}")]
+    InvalidParams(#[from] KMeansParamsError),
+    /// When the distance between the old and new centroids exceeds the tolerance parameter. Not an
+    /// actual error, just there to signal that the algorithm should keep running.
+    #[error("Algorithm has not yet converged, Keep on running the algorithm.")]
+    NotConverged(M),
     #[error(transparent)]
     LinfaError(#[from] linfa::error::Error),
 }

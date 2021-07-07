@@ -180,7 +180,7 @@ pub fn determine_intersection<F: Float>(
 
     // sufficient condition to be completely covered: distance from point to cell center plus distance from center to a corner
     // (farthest point from center) smaller or equal to the extended radius
-    if dist_from_center + dist_corner_from_center <= params.get_appx_tolerance() {
+    if dist_from_center + dist_corner_from_center <= params.appx_tolerance() {
         return IntersectionType::FullyCovered;
     }
 
@@ -201,7 +201,7 @@ pub fn determine_intersection<F: Float>(
         }
     }
 
-    if farthest_corner_distance < params.get_appx_tolerance() {
+    if farthest_corner_distance < params.appx_tolerance() {
         return IntersectionType::FullyCovered;
     }
     IntersectionType::Intersecting

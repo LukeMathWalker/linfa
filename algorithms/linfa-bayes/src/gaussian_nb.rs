@@ -91,14 +91,14 @@ where
     }
 }
 
-impl<F, D, L> IncrementalFit<'_, ArrayBase<D, Ix2>, L> for GaussianNbParams
+impl<F, D, L> IncrementalFit<'_, ArrayBase<D, Ix2>, L, BayesError> for GaussianNbParams
 where
     F: Float,
     D: Data<Elem = F>,
     L: AsTargets<Elem = usize> + Labels<Elem = usize>,
 {
     type ObjectIn = Option<GaussianNb<F>>;
-    type ObjectOut = Result<Option<GaussianNb<F>>>;
+    type ObjectOut = Option<GaussianNb<F>>;
 
     /// Incrementally fit on a batch of samples
     ///
@@ -141,7 +141,7 @@ where
         &self,
         model_in: Self::ObjectIn,
         dataset: &DatasetBase<ArrayBase<D, Ix2>, L>,
-    ) -> Self::ObjectOut {
+    ) -> Result<Self::ObjectOut> {
         let x = dataset.records();
         let y = dataset.try_single_target()?;
 

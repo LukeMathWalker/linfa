@@ -14,7 +14,7 @@ keywords = ["tsne", "visualization", "clustering", "machine-learning", "linfa"]
 categories = ["algorithms", "mathematics", "science"]
 
 [dependencies]
-thiserror = "1"
+thiserror = "=1.0.25"
 ndarray = { version = "0.14", default-features = false }
 ndarray-rand = "0.13"
 bhtsne = "0.4.0"

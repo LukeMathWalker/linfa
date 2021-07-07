@@ -39,11 +39,12 @@ impl AppxDbscanLabeler {
     /// ```rust
     ///
     /// use ndarray::{array, Axis};
+    /// use linfa::prelude::*;
     /// use linfa_clustering::{AppxDbscanLabeler, AppxDbscan};
     ///
     /// // Let's define some observations and set the desired params
     /// let observations = array![[0.,0.], [1., 0.], [0., 1.]];
-    /// let params = AppxDbscan::params(2);
+    /// let params = AppxDbscan::params(2).check().unwrap();
     /// // Now we build the labels for each observation using the Labeler struct
     /// let labeler = AppxDbscanLabeler::new(&observations.view(),&params);
     /// // Here we can access the labels for each point `observations`

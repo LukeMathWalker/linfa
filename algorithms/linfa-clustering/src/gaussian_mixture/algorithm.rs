@@ -3,7 +3,7 @@ use crate::gaussian_mixture::hyperparameters::{GmmCovarType, GmmHyperParams, Gmm
 use crate::k_means::KMeans;
 use linfa::{
     dataset::{WithLapack, WithoutLapack},
-    traits::*,
+    prelude::*,
     DatasetBase, Float,
 };
 use ndarray::{s, Array, Array1, Array2, Array3, ArrayBase, Axis, Data, Ix2, Ix3, Zip};
@@ -138,7 +138,7 @@ impl<F: Float> GaussianMixtureModel<F> {
         let resp = match hyperparameters.init_method() {
             GmmInitMethod::KMeans => {
                 let model = KMeans::params_with_rng(hyperparameters.n_clusters(), rng)
-                    .build()
+                    .check()
                     .unwrap()
                     .fit(dataset)?;
                 let mut resp = Array::<F, Ix2>::zeros((n_samples, hyperparameters.n_clusters()));

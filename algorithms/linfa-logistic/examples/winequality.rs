@@ -1,7 +1,9 @@
 use linfa::prelude::*;
 use linfa_logistic::LogisticRegression;
 
-fn main() -> Result<()> {
+use std::error::Error;
+
+fn main() -> Result<(), Box<dyn Error>> {
     // everything above 6.5 is considered a good wine
     let (train, valid) = linfa_datasets::winequality()
         .map_targets(|x| if *x > 6 { "good" } else { "bad" })

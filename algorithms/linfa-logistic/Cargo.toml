@@ -19,7 +19,7 @@ ndarray-linalg = "0.13"
 num-traits = "0.2"
 argmin = { version = "0.4", features = ["ndarrayl"] }
 serde = "1.0"
-thiserror = "1"
+thiserror = "=1.0.25"
 
 linfa = { version = "0.4.0", path = "../.." }
 

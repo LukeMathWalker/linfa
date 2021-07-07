@@ -1,5 +1,6 @@
 use crate::appx_dbscan::clustering::AppxDbscanLabeler;
 use crate::appx_dbscan::hyperparameters::AppxDbscanHyperParams;
+use crate::UncheckedAppxDbscanHyperParams;
 use linfa::traits::PredictRef;
 use linfa::Float;
 use ndarray::{Array1, ArrayBase, Data, Ix2};
@@ -79,9 +80,9 @@ use serde_crate::{Deserialize, Serialize};
 /// // If you don't specify the others (e.g. `tolerance`, `slack`)
 /// // default values will be used.
 /// let min_points = 3;
-/// let params = AppxDbscan::params(min_points).tolerance(1e-2).slack(1e-3);
 /// // Let's run the algorithm!
-/// let labels = params.predict(&observations);
+/// let params =
+/// AppxDbscan::params(min_points).tolerance(1e-2).slack(1e-3).predict(&observations).unwrap();
 /// // Points are `None` if noise `Some(id)` if belonging to a cluster.
 /// ```
 ///
@@ -93,8 +94,8 @@ impl AppxDbscan {
     /// Defaults are provided if the optional parameters are not specified:
     /// * `tolerance = 1e-4`
     /// * `slack = 1e-2`
-    pub fn params<F: Float>(min_points: usize) -> AppxDbscanHyperParams<F> {
-        AppxDbscanHyperParams::new(min_points)
+    pub fn params<F: Float>(min_points: usize) -> UncheckedAppxDbscanHyperParams<F> {
+        UncheckedAppxDbscanHyperParams::new(min_points)
     }
 }
 

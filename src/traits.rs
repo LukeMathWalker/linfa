@@ -32,11 +32,15 @@ pub trait Fit<R: Records, T, E: std::error::Error + From<crate::error::Error>> {
 /// An incremental algorithm takes a former model and dataset and returns a new model with updated
 /// parameters. If the former model is `None`, then the function acts like `Fit::fit` and
 /// initializes the model first.
-pub trait IncrementalFit<'a, R: Records, T> {
+pub trait IncrementalFit<'a, R: Records, T, E: std::error::Error + From<crate::error::Error>> {
     type ObjectIn: 'a;
     type ObjectOut: 'a;
 
-    fn fit_with(&self, model: Self::ObjectIn, dataset: &'a DatasetBase<R, T>) -> Self::ObjectOut;
+    fn fit_with(
+        &self,
+        model: Self::ObjectIn,
+        dataset: &'a DatasetBase<R, T>,
+    ) -> Result<Self::ObjectOut, E>;
 }
 
 /// Predict with model

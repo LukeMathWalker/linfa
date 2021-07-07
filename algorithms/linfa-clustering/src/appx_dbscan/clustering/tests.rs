@@ -1,9 +1,16 @@
+use crate::UncheckedAppxDbscanHyperParams;
+
 use super::*;
+use linfa::prelude::UncheckedHyperParams;
 use ndarray::Array2;
 
 #[test]
 fn clustering_test() {
-    let params = AppxDbscanHyperParams::new(2).tolerance(2.0).slack(0.1);
+    let params = UncheckedAppxDbscanHyperParams::new(2)
+        .tolerance(2.0)
+        .slack(0.1)
+        .check()
+        .unwrap();
     let l = params.tolerance / 2_f64.sqrt();
     let all_points = vec![
         2.0 * l,
