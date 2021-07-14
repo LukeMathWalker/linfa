@@ -14,7 +14,7 @@ jobs:
       fail-fast: false
       matrix:
         toolchain:
-          - 1.49.0
+          - 1.51.0
           - stable
 
     steps:

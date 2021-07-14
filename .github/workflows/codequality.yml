@@ -11,7 +11,7 @@ jobs:
     strategy:
       matrix:
         toolchain:
-          - 1.49.0
+          - 1.51.0
           - stable
 
     steps:
@@ -56,7 +56,6 @@ jobs:
           profile: minimal
           toolchain: stable
           override: true
-
       - name: Get rustc version
         id: rustc-version
         run: echo "::set-output name=version::$(cargo --version | cut -d ' ' -f 2)"
@@ -76,7 +75,6 @@ jobs:
       - name: Generate code coverage
         run: |
           cargo tarpaulin --verbose --features intel-mkl-system --timeout 120 --out Xml --all --release
-
       - name: Upload to codecov.io
         uses: codecov/codecov-action@v1
         with:
