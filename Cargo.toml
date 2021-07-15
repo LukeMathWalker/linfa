@@ -31,6 +31,7 @@ intel-mkl-static = ["blas", "ndarray-linalg", "intel-mkl-src/mkl-static-lp64-seq
 intel-mkl-system = ["blas", "ndarray-linalg", "intel-mkl-src/mkl-dynamic-lp64-seq"]
 
 blas = ["ndarray/blas"]
+polars = ["polars-core"]
 
 serde = ["serde_crate", "ndarray/serde"]
 
@@ -52,7 +53,7 @@ default-features = false
 features = ["std", "derive"]
 
 [dependencies.intel-mkl-src]
-version = "0.6.0"
+path = "/home/lorenz/Downloads/intel-mkl-src/intel-mkl-src"
 default-features = false
 optional = true
 
@@ -67,6 +68,11 @@ version = "0.10.4"
 optional = true
 default-features = false
 features = ["cblas"]
+
+[dependencies.polars-core]
+version = "0.12"
+optional = true
+default-features = false
 
 [dev-dependencies]
 ndarray-rand = "0.13"

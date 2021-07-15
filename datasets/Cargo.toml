@@ -13,6 +13,8 @@ ndarray = { version = "0.14", default-features = false }
 ndarray-csv = "=0.5.0"
 csv = "1.1"
 flate2 = "1.0"
+polars-core = { version = "0.12", default-features = false, optional = true }
+polars-io = { version = "0.12", default-features = false, optional = true }
 
 [dev-dependencies]
 approx = "0.4"
@@ -23,3 +25,4 @@ diabetes = []
 iris = []
 winequality = []
 linnerud = []
+income = ["polars-core", "polars-io", "linfa/polars"]

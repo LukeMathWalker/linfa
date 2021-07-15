@@ -1,6 +1,9 @@
 use super::{DatasetBase, Float, Records};
 use ndarray::{ArrayBase, Axis, Data, Dimension};
 
+#[cfg(feature = "polars")]
+use polars_core::frame::DataFrame;
+
 /// Implement records for NdArrays
 impl<F: Float, S: Data<Elem = F>, I: Dimension> Records for ArrayBase<S, I> {
     type Elem = F;
@@ -50,5 +53,18 @@ impl<R: Records> Records for &R {
 
     fn nfeatures(&self) -> usize {
         (*self).nfeatures()
+    }
+}
+
+#[cfg(feature = "polars")]
+impl Records for DataFrame {
+    type Elem = ();
+
+    fn nsamples(&self) -> usize {
+        self.shape().0
+    }
+
+    fn nfeatures(&self) -> usize {
+        self.shape().1
     }
 }

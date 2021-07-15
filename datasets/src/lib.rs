@@ -39,6 +39,15 @@ use linfa::Dataset;
 use ndarray::prelude::*;
 use ndarray_csv::Array2Reader;
 
+#[cfg(feature = "income")]
+use linfa::dataset::Dataframe;
+#[cfg(feature = "income")]
+use std::io::{Cursor, Read};
+#[cfg(feature = "income")]
+use polars_core::frame::DataFrame;
+#[cfg(feature = "income")]
+use polars_io::{csv::CsvReader, SerReader};
+
 #[cfg(any(
     feature = "iris",
     feature = "diabetes",
@@ -56,6 +65,20 @@ fn array_from_buf(buf: &[u8]) -> Array2<f64> {
 
     // extract ndarray
     reader.deserialize_array2_dynamic().unwrap()
+}
+
+#[cfg(feature = "income")]
+fn dataframe_from_buf(buf: &[u8]) -> DataFrame {
+    let mut file = GzDecoder::new(buf);
+    let mut buf: Vec<u8> = Vec::new();
+    file.read_to_end(&mut buf).unwrap();
+    let buf = Cursor::new(buf);
+
+    CsvReader::new(buf)
+        .infer_schema(None)
+        .has_header(false)
+        .finish()
+        .unwrap()
 }
 
 #[cfg(feature = "iris")]
@@ -155,6 +178,14 @@ pub fn linnerud() -> Dataset<f64, f64> {
     let feature_names = vec!["Chins", "Situps", "Jumps"];
 
     Dataset::new(input_array, output_array).with_feature_names(feature_names)
+}
+
+#[cfg(feature = "income")]
+pub fn income() -> (Dataframe<bool>, Dataframe<bool>) {
+    let input_data = include_bytes!("../data/income-train.tar.gz");
+    let input_dataframe = dataframe_from_buf(&input_data[..]);
+
+    panic!("")
 }
 
 #[cfg(test)]

@@ -13,6 +13,9 @@ pub use crate::traits::*;
 #[doc(no_inline)]
 pub use crate::dataset::{AsTargets, Dataset, DatasetBase, DatasetView, Float, Pr, Records};
 
+#[cfg(feature = "polars")]
+pub use crate::dataset::Dataframe;
+
 #[doc(no_inline)]
 pub use crate::metrics_classification::{BinaryClassification, ConfusionMatrix, ToConfusionMatrix};
 
